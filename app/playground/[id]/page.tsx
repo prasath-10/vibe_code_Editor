@@ -76,13 +76,14 @@ const MainPlaygroundPage = () => {
     updateFileContent,
   } = useFileExplorer();
 
+  // ✅ FIXED HERE
   const {
     serverUrl,
     isLoading: containerLoading,
     error: containerError,
     instance,
     writeFileSync,
-  } = useWebContainer({ templateData });
+  } = useWebContainer({ templateData: templateData! });
 
   const lastSyncedContent = useRef<Map<string, string>>(new Map());
 
@@ -155,7 +156,6 @@ const MainPlaygroundPage = () => {
 
         const newTemplateData = await saveTemplateData(updatedTemplateData);
 
-        // ✅ SAFE FIX
         if (newTemplateData) {
           setTemplateData(newTemplateData);
         } else {
