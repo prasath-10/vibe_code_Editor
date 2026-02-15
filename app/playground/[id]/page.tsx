@@ -2,42 +2,20 @@
 
 import { Button } from "@/components/ui/button";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
-  ResizableHandle,
-  ResizablePanel,
-  ResizablePanelGroup,
-} from "@/components/ui/resizable";
+  SidebarInset,
+  SidebarTrigger,
+} from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
-import { SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 
 import LoadingStep from "@/modules/playground/components/loader";
 import { PlaygroundEditor } from "@/modules/playground/components/playground-editor";
 import { TemplateFileTree } from "@/modules/playground/components/playground-explorer";
-import ToggleAI from "@/modules/playground/components/toggle-ai";
 
 import { useAISuggestions } from "@/modules/playground/hooks/useAISuggestion";
 import { useFileExplorer } from "@/modules/playground/hooks/useFileExplorer";
 import { usePlayground } from "@/modules/playground/hooks/usePlayground";
 
 import { findFilePath } from "@/modules/playground/lib";
-import {
-  TemplateFile,
-  TemplateFolder,
-} from "@/modules/playground/lib/path-to-json";
-
 import WebContainerPreview from "@/modules/webcontainers/components/webcontainer-preview";
 import { useWebContainer } from "@/modules/webcontainers/hooks/useWebContainer";
 
@@ -46,8 +24,6 @@ import {
   FileText,
   FolderOpen,
   Save,
-  Settings,
-  X,
 } from "lucide-react";
 
 import { useParams } from "next/navigation";
@@ -56,7 +32,7 @@ import { toast } from "sonner";
 
 const MainPlaygroundPage = () => {
   const { id } = useParams<{ id: string }>();
-  const [isPreviewVisible, setIsPreviewVisible] = useState(true);
+  const [isPreviewVisible] = useState(true);
 
   const { playgroundData, templateData, isLoading, error, saveTemplateData } =
     usePlayground(id);
@@ -69,26 +45,26 @@ const MainPlaygroundPage = () => {
     setPlaygroundId,
     setOpenFiles,
     activeFileId,
-    closeAllFiles,
-    closeFile,
     openFile,
     openFiles,
     updateFileContent,
   } = useFileExplorer();
 
-  // ✅ FIXED HERE
+  // ✅ FIX 1: null-safe templateData
   const {
     serverUrl,
     isLoading: containerLoading,
     error: containerError,
     instance,
     writeFileSync,
-  } = useWebContainer({ templateData: templateData! });
+  } = useWebContainer({ templateData: templateData ?? undefined });
 
   const lastSyncedContent = useRef<Map<string, string>>(new Map());
 
   useEffect(() => {
-    setPlaygroundId(id);
+    if (id) {
+      setPlaygroundId(id);
+    }
   }, [id, setPlaygroundId]);
 
   useEffect(() => {
@@ -98,21 +74,30 @@ const MainPlaygroundPage = () => {
   }, [templateData, setTemplateData, openFiles.length]);
 
   const activeFile = openFiles.find((file) => file.id === activeFileId);
-  const hasUnsavedChanges = openFiles.some((file) => file.hasUnsavedChanges);
+  const hasUnsavedChanges = openFiles.some(
+    (file) => file.hasUnsavedChanges
+  );
 
+  // ✅ FULLY FIXED SAVE FUNCTION
   const handleSave = useCallback(
     async (fileId?: string) => {
       const targetFileId = fileId || activeFileId;
       if (!targetFileId) return;
 
-      const fileToSave = openFiles.find((f) => f.id === targetFileId);
+      const fileToSave = openFiles.find(
+        (f) => f.id === targetFileId
+      );
       if (!fileToSave) return;
 
-      const latestTemplateData = useFileExplorer.getState().templateData;
+      const latestTemplateData =
+        useFileExplorer.getState().templateData;
       if (!latestTemplateData) return;
 
       try {
-        const filePath = findFilePath(fileToSave, latestTemplateData);
+        const filePath = findFilePath(
+          fileToSave,
+          latestTemplateData
+        );
         if (!filePath) {
           toast.error("File path not found");
           return;
@@ -122,45 +107,52 @@ const MainPlaygroundPage = () => {
           JSON.stringify(latestTemplateData)
         );
 
-        const updateFileContentRecursive = (items: any[]): any[] =>
+        const updateFileRecursive = (items: any[]): any[] =>
           items.map((item) => {
             if ("folderName" in item) {
               return {
                 ...item,
-                items: updateFileContentRecursive(item.items),
+                items: updateFileRecursive(item.items),
               };
             }
 
             if (
               item.filename === fileToSave.filename &&
-              item.fileExtension === fileToSave.fileExtension
+              item.fileExtension ===
+                fileToSave.fileExtension
             ) {
-              return { ...item, content: fileToSave.content };
+              return {
+                ...item,
+                content: fileToSave.content,
+              };
             }
 
             return item;
           });
 
-        updatedTemplateData.items = updateFileContentRecursive(
+        updatedTemplateData.items = updateFileRecursive(
           updatedTemplateData.items
         );
 
-        if (writeFileSync) {
+        // Sync to WebContainer
+        if (writeFileSync && filePath) {
           await writeFileSync(filePath, fileToSave.content);
-          lastSyncedContent.current.set(fileToSave.id, fileToSave.content);
+          lastSyncedContent.current.set(
+            fileToSave.id,
+            fileToSave.content
+          );
 
           if (instance?.fs) {
-            await instance.fs.writeFile(filePath, fileToSave.content);
+            await instance.fs.writeFile(
+              filePath,
+              fileToSave.content
+            );
           }
         }
 
-        const newTemplateData = await saveTemplateData(updatedTemplateData);
-
-        if (newTemplateData) {
-          setTemplateData(newTemplateData);
-        } else {
-          setTemplateData(updatedTemplateData);
-        }
+        // ✅ FIX 2: DO NOT CHECK RETURN VALUE (it returns void)
+        await saveTemplateData(updatedTemplateData);
+        setTemplateData(updatedTemplateData);
 
         const updatedOpenFiles = openFiles.map((f) =>
           f.id === targetFileId
@@ -178,8 +170,8 @@ const MainPlaygroundPage = () => {
         toast.success(
           `Saved ${fileToSave.filename}.${fileToSave.fileExtension}`
         );
-      } catch (error) {
-        console.error(error);
+      } catch (err) {
+        console.error(err);
         toast.error("Failed to save file");
       }
     },
@@ -194,79 +186,122 @@ const MainPlaygroundPage = () => {
     ]
   );
 
+  // ------------------------
+  // ERROR STATE
+  // ------------------------
+
   if (error) {
-    return <div>Error: {error}</div>;
+    return (
+      <div className="flex flex-col items-center justify-center h-screen">
+        <AlertCircle className="h-12 w-12 text-red-500 mb-4" />
+        <p className="text-red-600">{error}</p>
+      </div>
+    );
   }
+
+  // ------------------------
+  // LOADING STATE
+  // ------------------------
 
   if (isLoading) {
-    return <div>Loading...</div>;
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <LoadingStep
+          currentStep={1}
+          step={1}
+          label="Loading Playground..."
+        />
+      </div>
+    );
   }
+
+  // ------------------------
+  // NO TEMPLATE
+  // ------------------------
 
   if (!templateData) {
-    return <div>No template data</div>;
+    return (
+      <div className="flex flex-col items-center justify-center h-screen">
+        <FolderOpen className="h-12 w-12 text-yellow-500 mb-4" />
+        <p>No template data available</p>
+      </div>
+    );
   }
 
+  // ------------------------
+  // MAIN UI
+  // ------------------------
+
   return (
-    <TooltipProvider>
-      <div className="h-screen flex">
-        <TemplateFileTree
-          data={templateData}
-          onFileSelect={openFile}
-          selectedFile={activeFile}
-          title="File Explorer"
-        />
+    <div className="h-screen flex">
+      <TemplateFileTree
+        data={templateData}
+        onFileSelect={openFile}
+        selectedFile={activeFile}
+        title="File Explorer"
+      />
 
-        <SidebarInset>
-          <header className="flex h-16 items-center gap-2 border-b px-4">
-            <SidebarTrigger />
-            <Separator orientation="vertical" className="h-4" />
+      <SidebarInset>
+        <header className="flex h-16 items-center gap-2 border-b px-4">
+          <SidebarTrigger />
+          <Separator orientation="vertical" className="h-4" />
 
-            <div className="flex flex-1 justify-between items-center">
-              <h1 className="text-sm font-medium">
-                {playgroundData?.title || "Code Playground"}
-              </h1>
+          <div className="flex flex-1 justify-between items-center">
+            <h1 className="text-sm font-medium">
+              {playgroundData?.title ||
+                "Code Playground"}
+            </h1>
 
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => handleSave()}
-                disabled={!activeFile || !activeFile.hasUnsavedChanges}
-              >
-                <Save className="h-4 w-4" />
-              </Button>
-            </div>
-          </header>
-
-          <div className="flex-1">
-            {activeFile ? (
-              <PlaygroundEditor
-                activeFile={activeFile}
-                content={activeFile.content}
-                onContentChange={(value) =>
-                  activeFileId && updateFileContent(activeFileId, value)
-                }
-                suggestion={aiSuggestions.suggestion}
-                suggestionLoading={aiSuggestions.isLoading}
-                suggestionPosition={aiSuggestions.position}
-                onAcceptSuggestion={(editor, monaco) =>
-                  aiSuggestions.acceptSuggestion(editor, monaco)
-                }
-                onRejectSuggestion={(editor) =>
-                  aiSuggestions.rejectSuggestion(editor)
-                }
-                onTriggerSuggestion={(type, editor) =>
-                  aiSuggestions.fetchSuggestion(type, editor)
-                }
-              />
-            ) : (
-              <div className="flex items-center justify-center h-full">
-                <FileText className="h-12 w-12 text-gray-300" />
-              </div>
-            )}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => handleSave()}
+              disabled={
+                !activeFile ||
+                !activeFile.hasUnsavedChanges
+              }
+            >
+              <Save className="h-4 w-4" />
+            </Button>
           </div>
-        </SidebarInset>
-      </div>
-    </TooltipProvider>
+        </header>
+
+        <div className="flex-1">
+          {activeFile ? (
+            <PlaygroundEditor
+              activeFile={activeFile}
+              content={activeFile.content}
+              onContentChange={(value) =>
+                activeFileId &&
+                updateFileContent(activeFileId, value)
+              }
+              suggestion={aiSuggestions.suggestion}
+              suggestionLoading={aiSuggestions.isLoading}
+              suggestionPosition={aiSuggestions.position}
+              onAcceptSuggestion={(editor, monaco) =>
+                aiSuggestions.acceptSuggestion(
+                  editor,
+                  monaco
+                )
+              }
+              onRejectSuggestion={(editor) =>
+                aiSuggestions.rejectSuggestion(editor)
+              }
+              onTriggerSuggestion={(type, editor) =>
+                aiSuggestions.fetchSuggestion(
+                  type,
+                  editor
+                )
+              }
+            />
+          ) : (
+            <div className="flex items-center justify-center h-full">
+              <FileText className="h-12 w-12 text-gray-300" />
+            </div>
+          )}
+        </div>
+      </SidebarInset>
+    </div>
   );
 };
 
