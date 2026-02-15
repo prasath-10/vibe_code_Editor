@@ -8,7 +8,7 @@ import React from "react";
 const Page = async () => {
   const playgrounds = await getAllPlaygroundForUser();
 
-  // ✅ Fix nullable description issue
+  // ✅ Convert null description to empty string
   const formattedPlaygrounds = (playgrounds ?? []).map((p) => ({
     ...p,
     description: p.description ?? "",
